@@ -8,6 +8,7 @@ const routing = @import("router.zig");
 pub const Application = struct {
     pub const Config = struct {
         database: database_api.Config,
+        user_data: ?*anyopaque = null,
     };
 
     allocator: std.mem.Allocator,
@@ -15,6 +16,7 @@ pub const Application = struct {
     router: routing.Router,
     client: http.Client,
     database: database_api.Database,
+    user_data: ?*anyopaque,
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -35,6 +37,7 @@ pub const Application = struct {
             .router = router,
             .client = client,
             .database = database,
+            .user_data = config.user_data,
         };
     }
 
@@ -133,6 +136,7 @@ pub const Application = struct {
         var context: Context = .{
             .client = &self.client,
             .database = &self.database,
+            .user_data = self.user_data,
         };
         return match.route.handler(&context, request, match.captures);
     }
@@ -152,6 +156,20 @@ fn testEcho(
     _: []const routing.PathParameter,
 ) anyerror!http.Response {
     return response_tools.body(.ok, .binary, request.body);
+}
+
+const TestState = struct {
+    handler_calls: usize = 0,
+};
+
+fn testState(
+    context: *Context,
+    _: *const http.Request,
+    _: []const routing.PathParameter,
+) anyerror!http.Response {
+    const state = context.state(TestState) orelse return error.MissingApplicationState;
+    state.handler_calls += 1;
+    return .{ .status = .ok };
 }
 
 fn testRequest(
@@ -179,6 +197,31 @@ fn initTestApplication() !Application {
             .sqlite = .{ .path = ":memory:" },
         },
     });
+}
+
+test "user data defaults to null" {
+    var application = try initTestApplication();
+    defer application.deinit();
+
+    try std.testing.expect(application.user_data == null);
+}
+
+test "handler receives and mutates configured user data" {
+    var state: TestState = .{};
+    var application = try Application.init(std.testing.allocator, std.testing.io, .{
+        .database = .{
+            .sqlite = .{ .path = ":memory:" },
+        },
+        .user_data = &state,
+    });
+    defer application.deinit();
+    try application.get("/state", testState);
+
+    const request = testRequest(.GET, "/state", "");
+    const response = try application.dispatch(&request);
+
+    try std.testing.expectEqual(http.Response.Status.ok.code, response.status.code);
+    try std.testing.expectEqual(@as(usize, 1), state.handler_calls);
 }
 
 test "register and dispatch route without treating query as path" {
