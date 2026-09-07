@@ -1,6 +1,7 @@
 const database = @import("database");
 const http = @import("http");
 const application = @import("application.zig");
+const middleware = @import("middleware.zig");
 const routing = @import("router.zig");
 
 pub const Context = @import("context.zig");
@@ -19,6 +20,7 @@ pub const Handler = routing.Handler;
 pub const PathParameter = routing.PathParameter;
 pub const Request = http.Request;
 pub const Response = http.Response;
+pub const withState = middleware.withState;
 
 test {
     _ = Application;
@@ -36,4 +38,5 @@ test {
     _ = response;
     _ = Request;
     _ = Response;
+    _ = withState;
 }
