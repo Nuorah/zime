@@ -3,6 +3,9 @@ const std = @import("std");
 pub const Method = enum {
     GET,
     POST,
+    PUT,
+    PATCH,
+    DELETE,
 };
 
 pub const Header = struct {
@@ -399,6 +402,20 @@ test "reject malformed request lines" {
         try expectRequestError(error.InvalidRequestLine, input);
 
     try expectRequestError(error.IncompleteRequestLine, "");
+}
+
+test "accept supported HTTP methods" {
+    const methods = [_]Method{ .GET, .POST, .PUT, .PATCH, .DELETE };
+    for (methods) |method| {
+        var input: std.ArrayList(u8) = .empty;
+        defer input.deinit(std.testing.allocator);
+        try input.appendSlice(std.testing.allocator, @tagName(method));
+        try input.appendSlice(std.testing.allocator, " / HTTP/1.1\r\nHost: example.com\r\n\r\n");
+
+        var request = try parseTestRequest(input.items);
+        defer request.deinit();
+        try std.testing.expectEqual(method, request.method);
+    }
 }
 
 test "methods are case-sensitive and HTTP version is exactly 1.1" {

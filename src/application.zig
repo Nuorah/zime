@@ -48,6 +48,30 @@ pub fn RouteScope(comptime State: type) type {
         ) !void {
             try self.route(.POST, path, handler);
         }
+
+        pub fn put(
+            self: *Self,
+            path: []const u8,
+            comptime handler: StateHandler,
+        ) !void {
+            try self.route(.PUT, path, handler);
+        }
+
+        pub fn patch(
+            self: *Self,
+            path: []const u8,
+            comptime handler: StateHandler,
+        ) !void {
+            try self.route(.PATCH, path, handler);
+        }
+
+        pub fn delete(
+            self: *Self,
+            path: []const u8,
+            comptime handler: StateHandler,
+        ) !void {
+            try self.route(.DELETE, path, handler);
+        }
     };
 }
 
@@ -126,6 +150,30 @@ pub const Application = struct {
         handler: routing.Handler,
     ) !void {
         try self.route(.POST, path, handler);
+    }
+
+    pub fn put(
+        self: *Application,
+        path: []const u8,
+        handler: routing.Handler,
+    ) !void {
+        try self.route(.PUT, path, handler);
+    }
+
+    pub fn patch(
+        self: *Application,
+        path: []const u8,
+        handler: routing.Handler,
+    ) !void {
+        try self.route(.PATCH, path, handler);
+    }
+
+    pub fn delete(
+        self: *Application,
+        path: []const u8,
+        handler: routing.Handler,
+    ) !void {
+        try self.route(.DELETE, path, handler);
     }
 
     pub fn mount(
@@ -316,6 +364,30 @@ test "registered controller receives the request" {
 
     try std.testing.expectEqualSlices(u8, request.body, response.body);
     try std.testing.expectEqualStrings("application/octet-stream", response.headers[0].value);
+}
+
+test "dispatch supported mutation methods" {
+    var application = try initTestApplication();
+    defer application.deinit();
+    try application.put("/put", testHealth);
+    try application.patch("/patch", testHealth);
+    try application.delete("/delete", testHealth);
+
+    const cases = [_]struct {
+        method: http.Request.Method,
+        target: []const u8,
+    }{
+        .{ .method = .PUT, .target = "/put" },
+        .{ .method = .PATCH, .target = "/patch" },
+        .{ .method = .DELETE, .target = "/delete" },
+    };
+    for (cases) |case| {
+        const request = testRequest(case.method, case.target, "");
+        try std.testing.expectEqual(
+            http.Response.Status.ok.code,
+            (try application.dispatch(&request)).status.code,
+        );
+    }
 }
 
 test "return not found for an unmatched method or path" {
