@@ -19,6 +19,7 @@ pub const Route = struct {
     method: http.Request.Method,
     path: []const u8,
     handler: Handler,
+    user_data: ?*anyopaque,
     parameter_count: u8,
 };
 
@@ -48,6 +49,16 @@ pub const Router = struct {
         path: []const u8,
         handler: Handler,
     ) !void {
+        try self.addWithUserData(method, path, handler, null);
+    }
+
+    pub fn addWithUserData(
+        self: *Router,
+        method: http.Request.Method,
+        path: []const u8,
+        handler: Handler,
+        user_data: ?*anyopaque,
+    ) !void {
         if (self.frozen)
             return error.RouterFrozen;
         const parameter_count = try analyzeRoutePath(path);
@@ -70,6 +81,7 @@ pub const Router = struct {
             .method = method,
             .path = owned_path,
             .handler = handler,
+            .user_data = user_data,
             .parameter_count = parameter_count,
         });
     }

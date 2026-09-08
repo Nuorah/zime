@@ -2,8 +2,54 @@ const std = @import("std");
 const database_api = @import("database");
 const http = @import("http");
 const Context = @import("context.zig");
+const middleware = @import("middleware.zig");
 const response_tools = @import("response.zig");
 const routing = @import("router.zig");
+
+pub fn RouteScope(comptime State: type) type {
+    return struct {
+        application: *Application,
+        state: *State,
+
+        const Self = @This();
+        const StateHandler = fn (
+            *Context,
+            *const http.Request,
+            []const routing.PathParameter,
+            *State,
+        ) anyerror!http.Response;
+
+        pub fn route(
+            self: *Self,
+            method: http.Request.Method,
+            path: []const u8,
+            comptime handler: StateHandler,
+        ) !void {
+            try self.application.registerRoute(
+                method,
+                path,
+                middleware.withState(State, handler),
+                self.state,
+            );
+        }
+
+        pub fn get(
+            self: *Self,
+            path: []const u8,
+            comptime handler: StateHandler,
+        ) !void {
+            try self.route(.GET, path, handler);
+        }
+
+        pub fn post(
+            self: *Self,
+            path: []const u8,
+            comptime handler: StateHandler,
+        ) !void {
+            try self.route(.POST, path, handler);
+        }
+    };
+}
 
 pub const Application = struct {
     pub const Config = struct {
@@ -47,13 +93,23 @@ pub const Application = struct {
         self.router.deinit();
     }
 
+    fn registerRoute(
+        self: *Application,
+        method: http.Request.Method,
+        path: []const u8,
+        handler: routing.Handler,
+        user_data: ?*anyopaque,
+    ) !void {
+        try self.router.addWithUserData(method, path, handler, user_data);
+    }
+
     pub fn route(
         self: *Application,
         method: http.Request.Method,
         path: []const u8,
         handler: routing.Handler,
     ) !void {
-        try self.router.add(method, path, handler);
+        try self.registerRoute(method, path, handler, null);
     }
 
     pub fn get(
@@ -70,6 +126,19 @@ pub const Application = struct {
         handler: routing.Handler,
     ) !void {
         try self.route(.POST, path, handler);
+    }
+
+    pub fn mount(
+        self: *Application,
+        comptime State: type,
+        state: *State,
+        comptime register: fn (*RouteScope(State)) anyerror!void,
+    ) !void {
+        var scope: RouteScope(State) = .{
+            .application = self,
+            .state = state,
+        };
+        try register(&scope);
     }
 
     pub fn freeze(self: *Application) void {
@@ -136,7 +205,7 @@ pub const Application = struct {
         var context: Context = .{
             .client = &self.client,
             .database = &self.database,
-            .user_data = self.user_data,
+            .user_data = match.route.user_data orelse self.user_data,
         };
         return match.route.handler(&context, request, match.captures);
     }
@@ -265,4 +334,66 @@ test "return not found for an unmatched method or path" {
         http.Response.Status.not_found.code,
         (try application.dispatch(&missing_path)).status.code,
     );
+}
+
+const FirstScopeState = struct {
+    calls: usize = 0,
+};
+
+const SecondScopeState = struct {
+    calls: usize = 0,
+};
+
+fn firstScopeHandler(
+    _: *Context,
+    _: *const http.Request,
+    _: []const routing.PathParameter,
+    state: *FirstScopeState,
+) anyerror!http.Response {
+    state.calls += 1;
+    return .{ .status = .ok };
+}
+
+fn secondScopeHandler(
+    _: *Context,
+    _: *const http.Request,
+    _: []const routing.PathParameter,
+    state: *SecondScopeState,
+) anyerror!http.Response {
+    state.calls += 1;
+    return .{ .status = .ok };
+}
+
+fn mountFirstScope(scope: *RouteScope(FirstScopeState)) anyerror!void {
+    try scope.get("/first", firstScopeHandler);
+}
+
+fn mountSecondScope(scope: *RouteScope(SecondScopeState)) anyerror!void {
+    try scope.post("/second", secondScopeHandler);
+}
+
+test "mount independently typed route scopes" {
+    var application = try initTestApplication();
+    defer application.deinit();
+
+    var first_state: FirstScopeState = .{};
+    var second_state: SecondScopeState = .{};
+    try application.mount(FirstScopeState, &first_state, mountFirstScope);
+    try application.mount(SecondScopeState, &second_state, mountSecondScope);
+
+    const first_request = testRequest(.GET, "/first", "");
+    const second_request = testRequest(.POST, "/second", "");
+    try std.testing.expectEqual(
+        http.Response.Status.ok.code,
+        (try application.dispatch(&first_request)).status.code,
+    );
+    try std.testing.expectEqual(@as(usize, 1), first_state.calls);
+    try std.testing.expectEqual(@as(usize, 0), second_state.calls);
+
+    try std.testing.expectEqual(
+        http.Response.Status.ok.code,
+        (try application.dispatch(&second_request)).status.code,
+    );
+    try std.testing.expectEqual(@as(usize, 1), first_state.calls);
+    try std.testing.expectEqual(@as(usize, 1), second_state.calls);
 }

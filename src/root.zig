@@ -9,6 +9,7 @@ pub const json = @import("json.zig");
 pub const response = @import("response.zig");
 
 pub const Application = application.Application;
+pub const RouteScope = application.RouteScope;
 pub const Client = http.Client;
 pub const Database = database.Database;
 pub const DatabaseConfig = database.Config;
@@ -38,5 +39,6 @@ test {
     _ = response;
     _ = Request;
     _ = Response;
+    _ = RouteScope;
     _ = withState;
 }
