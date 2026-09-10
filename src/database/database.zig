@@ -109,4 +109,20 @@ pub const Row = struct {
             else => error.ColumnTypeMismatch,
         };
     }
+
+    pub fn optionalText(self: Row, index: usize) !?[]const u8 {
+        return switch (try self.value(index)) {
+            .null => null,
+            .text => |result| result,
+            else => error.ColumnTypeMismatch,
+        };
+    }
+
+    pub fn optionalInteger(self: Row, index: usize) !?i64 {
+        return switch (try self.value(index)) {
+            .null => null,
+            .integer => |result| result,
+            else => error.ColumnTypeMismatch,
+        };
+    }
 };

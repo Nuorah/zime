@@ -45,11 +45,15 @@ test "open in-memory database and execute parameterized SQL" {
         else => return error.UnexpectedColumnType,
     });
     try std.testing.expectEqualStrings("hello", try row.text(2));
+    try std.testing.expectEqual(@as(?i64, 42), try row.optionalInteger(0));
+    try std.testing.expectEqualStrings("hello", (try row.optionalText(2)).?);
     try std.testing.expectEqualSlices(u8, "\x00\xff", switch (try row.value(3)) {
         .blob => |blob| blob,
         else => return error.UnexpectedColumnType,
     });
     try std.testing.expect(try row.value(4) == .null);
+    try std.testing.expect((try row.optionalText(4)) == null);
+    try std.testing.expect((try row.optionalInteger(4)) == null);
     try std.testing.expect((try query.next()) == null);
 }
 
